@@ -1,0 +1,6 @@
+[tools]
+java = "temurin-25"
+"github:clojure-lsp/clojure-lsp" = "latest"
+
+[tasks.clone-notes]
+run = "gh repo clone lukaszkorecki/notes test/fixtures"

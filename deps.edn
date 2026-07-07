@@ -1,0 +1,14 @@
+{:paths ["src"]
+ :deps {org.clojure/clojure {:mvn/version "1.12.5"}
+        babashka/fs {:mvn/version "0.5.34"}
+
+        org.apache.lucene/lucene-core {:mvn/version "10.5.0"}
+        org.apache.lucene/lucene-analysis-common {:mvn/version "10.5.0"}
+
+        ;; In-process ONNX embeddings (all-MiniLM-L6-v2, quantized, 384-dim).
+        ;; The model .onnx + tokenizer are bundled in this jar (~25MB). No network at runtime.
+        dev.langchain4j/langchain4j-embeddings-all-minilm-l6-v2-q {:mvn/version "1.17.2-beta27"}}
+
+ :aliases
+ {;; Optional: lets Lucene's HNSW use the Panama Vector API for faster distance calcs.
+  :repl {:jvm-opts ["--add-modules" "jdk.incubator.vector"]}}}
