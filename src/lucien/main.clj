@@ -58,26 +58,27 @@
   "Walk src-dir, embed each chunk, write vectors + text to a Lucene index at index-dir.
    OpenMode/CREATE wipes any existing index — so this is a full rebuild each call."
   [src-dir index-dir]
-  (with-open [dir (FSDirectory/open (fs/path index-dir))
-              indexer-config (doto (IndexWriterConfig. (StandardAnalyzer.))
-                               ;; TODO: use CREATE_OR_APPEND and generate IDs for docs + hashing
-                               ;; to make reindexing work, right now this is full rebuild
-                               (.setOpenMode IndexWriterConfig$OpenMode/CREATE))
-              writer (IndexWriter. dir indexer-config)]
-    (doseq [f (text-files src-dir)
-            :let [path-str (str f)
-                  content (slurp (fs/file f))]
-            [i chunk] (map-indexed vector (chunk-text content 1000 100))]
-      (let [v (embed chunk)
-            doc (doto (Document.)
-                  (.add (StringField. "path" path-str Field$Store/YES))
-                  (.add (StoredField. "chunk" (int i)))
-                  (.add (StoredField. "text" chunk))
-                  ;; COSINE handles normalization internally — safest with raw model output.
-                  (.add (KnnFloatVectorField. "vector" v VectorSimilarityFunction/COSINE)))]
-        (.addDocument writer doc)))
-    (.commit writer)
-    :ok))
+  (let [indexer-config (doto (IndexWriterConfig. (StandardAnalyzer.))
+                         ;; TODO: use CREATE_OR_APPEND and generate IDs for docs + hashing
+                         ;; to make reindexing work, right now this is full rebuild
+                         (.setOpenMode IndexWriterConfig$OpenMode/CREATE))]
+    (with-open [dir (FSDirectory/open (fs/path index-dir))
+
+                writer (IndexWriter. dir indexer-config)]
+      (doseq [f (text-files src-dir)
+              :let [path-str (str f)
+                    content (slurp (fs/file f))]
+              [i chunk] (map-indexed vector (chunk-text content 1000 100))]
+        (let [v (embed chunk)
+              doc (doto (Document.)
+                    (.add (StringField. "path" path-str Field$Store/YES))
+                    (.add (StoredField. "chunk" (int i)))
+                    (.add (StoredField. "text" chunk))
+                    ;; COSINE handles normalization internally — safest with raw model output.
+                    (.add (KnnFloatVectorField. "vector" v VectorSimilarityFunction/COSINE)))]
+          (.addDocument writer doc)))
+      (.commit writer)
+      :ok)))
 
 ;; ---------------------------------------------------------------------------
 ;; Search
@@ -120,3 +121,16 @@
   (with-open [dir (FSDirectory/open (fs/path ".index"))
               reader (DirectoryReader/open dir)]
     (.numDocs reader)))
+
+(defn -main [& [command index-dir query-or-src-dir]]
+  (case command
+    "build-index" (build-index! (str (fs/absolutize query-or-src-dir)) (str (fs/absolutize index-dir)))
+    "search" (->> (search (str (fs/absolutize index-dir)) query-or-src-dir 5)
+                  (mapv (fn [{:keys [score path text]}]
+                          (printf "> %s\n: %s | %s\n"
+                                  text
+                                  score path))))
+
+    (do
+      (println "oh no")
+      (System/exit 1))))
