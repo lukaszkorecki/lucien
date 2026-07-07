@@ -1,5 +1,6 @@
 [tools]
 java = "temurin-25"
+clojure = "latest"
 "github:clojure-lsp/clojure-lsp" = "latest"
 
 [tasks.clone-notes]
