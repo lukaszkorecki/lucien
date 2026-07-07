@@ -3,14 +3,23 @@
   ;; TODO: add a logger
   (:require [babashka.fs :as fs])
   (:import
-   ;; embeddings
+   [dev.langchain4j.data.embedding Embedding]
    [dev.langchain4j.model.embedding.onnx.allminilml6v2q AllMiniLmL6V2QuantizedEmbeddingModel]
+   [dev.langchain4j.model.output Response] ;; search
    [org.apache.lucene.analysis.standard StandardAnalyzer]
-   [org.apache.lucene.document Document StringField StoredField KnnFloatVectorField Field$Store]
-   [org.apache.lucene.index IndexWriter IndexWriterConfig IndexWriterConfig$OpenMode
-    DirectoryReader VectorSimilarityFunction]
-   [org.apache.lucene.search IndexSearcher KnnFloatVectorQuery]
-   ;; lucene store + indexing
+   [org.apache.lucene.document
+    Document
+    Field$Store
+    KnnFloatVectorField
+    StoredField
+    StringField]
+   [org.apache.lucene.index
+    DirectoryReader
+    IndexWriter
+    IndexWriterConfig
+    IndexWriterConfig$OpenMode
+    VectorSimilarityFunction]
+   [org.apache.lucene.search IndexSearcher KnnFloatVectorQuery ScoreDoc]
    [org.apache.lucene.store FSDirectory]))
 
 (set! *warn-on-reflection* true)
@@ -26,16 +35,19 @@
 (defn embed
   "String -> 384-element float[]. First call is slow (model init + JIT warmup)."
   ^floats [^String s]
-  (.vector (.content (.embed ^AllMiniLmL6V2QuantizedEmbeddingModel @model s))))
+  (let [response (.embed ^AllMiniLmL6V2QuantizedEmbeddingModel @model s)
+        content (Response/.content response)]
+    (Embedding/.vector content)))
 
 ;; Files -> chunks
 ;; Dumb fixed-window chunker. Fine for wiring.
 ;; TODO: Swap for commonmark-java or treesitter to get better semantic structure?
 
-(defn chunk-text [^String s size overlap]
+(defn chunk-text [^String s ^long size ^long overlap]
   (let [step (max 1 (- size overlap))
         n (count s)]
-    (loop [start 0 acc []]
+    (loop [start 0
+           acc []]
       (if (>= start n)
         acc
         (let [end (min n (+ start size))
@@ -71,11 +83,11 @@
               [i chunk] (map-indexed vector (chunk-text content 1000 100))]
         (let [v (embed chunk)
               doc (doto (Document.)
-                    (.add (StringField. "path" path-str Field$Store/YES))
-                    (.add (StoredField. "chunk" (int i)))
-                    (.add (StoredField. "text" chunk))
+                    (Document/.add (StringField. "path" path-str Field$Store/YES))
+                    (Document/.add (StoredField. "chunk" (int i)))
+                    (Document/.add (StoredField. "text" ^String chunk))
                     ;; COSINE handles normalization internally — safest with raw model output.
-                    (.add (KnnFloatVectorField. "vector" v VectorSimilarityFunction/COSINE)))]
+                    (Document/.add (KnnFloatVectorField. "vector" v VectorSimilarityFunction/COSINE)))]
           (.addDocument writer doc)))
       (.commit writer)
       :ok)))
@@ -97,8 +109,8 @@
           sf (.storedFields searcher)] ;; Lucene 10: NOT searcher.doc(id)
       ;; mapv to realize results *before* the reader closes.
       (mapv (fn [sd]
-              (let [d (.document sf (.-doc sd))]
-                {:score (.-score sd)
+              (let [d ^Document (.document sf (.-doc ^ScoreDoc sd))]
+                {:score (.-score ^ScoreDoc sd)
                  :path (.get d "path")
                  :text (.get d "text")}))
             (.scoreDocs top)))))
