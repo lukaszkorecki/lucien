@@ -146,3 +146,34 @@
     (do
       (println "oh no")
       (System/exit 1))))
+
+(comment
+  ;; construction — one per system (Component: depends on the writer)
+  (def sm (SearcherManager. writer (SearcherFactory.)))
+
+  (defn search [^SearcherManager sm ^String query k]
+    (let [s (.acquire sm)]                     ;; shared, ref-counted — cheap
+      (try
+        (let [qvec (embed query)
+              top (.search s (KnnFloatVectorQuery. "vector" qvec (int k)) (int k))
+              sf (.storedFields s)]
+          (mapv (fn [sd]
+                  (let [d (.document sf (.-doc sd))]
+                    {:score (.-score sd) :path (.get d "path") :text (.get d "text")}))
+                (.scoreDocs top)))
+        (finally
+          (.release sm s)))))                  ;; NEVER use s after this
+  )
+(comment
+  (defn reindex-file! [^IndexWriter writer f]
+    (let [path-str (str f)]
+      ;; "path" is a StringField (indexed) in the schema, so delete-by-Term matches. Required.
+      (.deleteDocuments writer (into-array Term [(Term. "path" path-str)]))
+      (doseq [[i chunk] (map-indexed vector (chunk-text (slurp (fs/file f)) 1000 100))]
+        (.addDocument writer (doc-for path-str i chunk (embed chunk))))))
+
+  (defn on-fs-events! [writer sm changed-paths deleted-paths]
+    (doseq [p deleted-paths] (.deleteDocuments writer (into-array Term [(Term. "path" (str p))])))
+    (doseq [p changed-paths] (reindex-file! writer p))
+    (.maybeRefresh sm))                        ;; make the batch visible, once, at the end
+  )
