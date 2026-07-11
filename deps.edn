@@ -11,4 +11,7 @@
 
  :aliases
  {;; Optional: lets Lucene's HNSW use the Panama Vector API for faster distance calcs.
-  :repl {:jvm-opts ["--add-modules" "jdk.incubator.vector"]}}}
+  :repl {:jvm-opts ["--add-modules" "jdk.incubator.vector"]}
+  :run {:jvm-opts ["--enable-native-access=ALL-UNNAMED"
+                   "--add-modules" "jdk.incubator.vector"]
+        :main-opts ["-m" "lucien.main"]}}}

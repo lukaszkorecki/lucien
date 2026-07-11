@@ -235,8 +235,11 @@
   [& [command index-dir query-or-src-dir]]
   (case command
     "build-index"
-    (build-index! (str (fs/absolutize query-or-src-dir))
-                  (str (fs/absolutize index-dir)))
+    (do
+      (build-index! (str (fs/absolutize query-or-src-dir))
+                    (str (fs/absolutize index-dir)))
+
+      (index-stats (str (fs/absolutize index-dir))))
 
     "search"
     (with-open [sm (open-searcher-manager! (str (fs/absolutize index-dir)))]
